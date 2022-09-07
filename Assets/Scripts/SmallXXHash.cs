@@ -67,4 +67,20 @@ public readonly struct SmallXXHash4 {
 
   static uint4 RotateLeft (uint4 data, int steps) => (data << steps) | (data >> 32 - steps);
 
+  public uint4 BytesA => (uint4)this & 255;
+
+  public uint4 BytesB => ((uint4)this >> 8) & 255;
+
+  public uint4 BytesC => ((uint4)this >> 16) & 255;
+
+  public uint4 BytesD => (uint4)this >> 24;
+
+  public float4 Floats01A => (float4)BytesA * (1f / 255f);
+
+  public float4 Floats01B => (float4)BytesB * (1f / 255f);
+
+  public float4 Floats01C => (float4)BytesC * (1f / 255f);
+
+  public float4 Floats01D => (float4)BytesD * (1f / 255f);
+
 }

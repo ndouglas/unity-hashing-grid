@@ -6,6 +6,8 @@ using UnityEngine;
 
 using static Unity.Mathematics.math;
 
+using static Noise;
+
 public class NoiseVisualization : Visualization {
 
   [SerializeField]
@@ -22,6 +24,15 @@ public class NoiseVisualization : Visualization {
 
   ComputeBuffer noiseBuffer;
 
+  static ScheduleDelegate[] noiseJobs = {
+    Job<Lattice1D>.ScheduleParallel,
+    Job<Lattice2D>.ScheduleParallel,
+    Job<Lattice3D>.ScheduleParallel,
+  };
+
+  [SerializeField, Range(1, 3)]
+  int dimensions = 3;
+
   protected override void EnableVisualization (int dataLength, MaterialPropertyBlock propertyBlock) {
     noise = new NativeArray<float4>(dataLength, Allocator.Persistent);
     noiseBuffer = new ComputeBuffer(dataLength * 4, 4);
@@ -35,7 +46,8 @@ public class NoiseVisualization : Visualization {
   }
 
   protected override void UpdateVisualization (NativeArray<float3x4> positions, int resolution, JobHandle handle) {
-    handle.Complete();
+    noiseJobs[dimensions - 1](positions, noise, seed, domain, resolution, handle).Complete();
     noiseBuffer.SetData(noise.Reinterpret<float>(4 * 4));
   }
+
 }
