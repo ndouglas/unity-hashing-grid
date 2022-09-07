@@ -6,100 +6,72 @@ using UnityEngine;
 
 using static Unity.Mathematics.math;
 
-public class HashVisualization : MonoBehaviour {
+public class HashVisualization : Visualization {
 
   [BurstCompile(FloatPrecision.Standard, FloatMode.Fast, CompileSynchronously = true)]
   struct HashJob : IJobFor {
 
     [WriteOnly]
-    public NativeArray<uint> hashes;
+    public NativeArray<uint4> hashes;
 
-    public int resolution;
-    
-    public float invResolution;
+    [ReadOnly]
+    public NativeArray<float3x4> positions;
 
-    public SmallXXHash hash;
+    public SmallXXHash4 hash;
+
+    public float3x4 domainTRS;
 
     public void Execute(int i) {
-      int v = (int)floor(invResolution * i + 0.00001f);
-      int u = i - resolution * v - resolution / 2;
-      v -= resolution / 2;
-      hashes[i] = hash.Eat(u).Eat(v);
+      float4x3 p = TransformPositions(domainTRS, transpose(positions[i]));
+
+      int4 u = (int4)floor(p.c0);
+      int4 v = (int4)floor(p.c1);
+      int4 w = (int4)floor(p.c2);
+      hashes[i] = hash.Eat(u).Eat(v).Eat(w);
     }
 
+    float4x3 TransformPositions (float3x4 trs, float4x3 p) => float4x3(
+      trs.c0.x * p.c0 + trs.c1.x * p.c1 + trs.c2.x * p.c2 + trs.c3.x,
+      trs.c0.y * p.c0 + trs.c1.y * p.c1 + trs.c2.y * p.c2 + trs.c3.y,
+      trs.c0.z * p.c0 + trs.c1.z * p.c1 + trs.c2.z * p.c2 + trs.c3.z
+    );
+
   }
+
+  [SerializeField]
+  SpaceTRS domain = new SpaceTRS {
+    scale = 8f
+  };
 
   [SerializeField]
   int seed;
 
-  static int 
-    hashesId = Shader.PropertyToID("_Hashes"),
-    configId = Shader.PropertyToID("_Config");
+  static int hashesId = Shader.PropertyToID("_Hashes");
 
-  [SerializeField]
-  Mesh instanceMesh;
-
-  [SerializeField]
-  Material material;
-
-  [SerializeField, Range(1, 512)]
-  int resolution = 16;
-
-  NativeArray<uint> hashes;
+  NativeArray<uint4> hashes;
 
   ComputeBuffer hashesBuffer;
 
-  MaterialPropertyBlock propertyBlock;
-
-  [SerializeField, Range(-2f, 2f)]
-  float verticalOffset = 1f;
-
-  void OnEnable() {
-    int length = resolution * resolution;
-    hashes = new NativeArray<uint>(length, Allocator.Persistent);
-    hashesBuffer = new ComputeBuffer(length, 4);
-
-    new HashJob {
-      hashes = hashes,
-      resolution = resolution,
-      invResolution = 1f / resolution,
-      hash = SmallXXHash.Seed(seed),
-    }.ScheduleParallel(hashes.Length, resolution, default).Complete();
-
-    hashesBuffer.SetData(hashes);
-
-    propertyBlock ??= new MaterialPropertyBlock();
+  protected override void EnableVisualization (int dataLength, MaterialPropertyBlock propertyBlock) {
+    hashes = new NativeArray<uint4>(dataLength, Allocator.Persistent);
+    hashesBuffer = new ComputeBuffer(dataLength * 4, 4);
     propertyBlock.SetBuffer(hashesId, hashesBuffer);
-    propertyBlock.SetVector(configId, new Vector4(
-      resolution, 
-      1f/resolution, 
-      verticalOffset / resolution
-    ));
-
   }
 
-  void OnDisable() {
+  protected override void DisableVisualization () {
     hashes.Dispose();
     hashesBuffer.Release();
     hashesBuffer = null;
   }
 
-  void OnValidate() {
-    if (hashesBuffer != null && enabled) {
-      OnDisable();
-      OnEnable();
-    }
+  protected override void UpdateVisualization (NativeArray<float3x4> positions, int resolution, JobHandle handle) {
+    new HashJob {
+      positions = positions,
+      hashes = hashes,
+      hash = SmallXXHash.Seed(seed),
+      domainTRS = domain.Matrix,
+    }.ScheduleParallel(hashes.Length, resolution, handle).Complete();
+  
+    hashesBuffer.SetData(hashes.Reinterpret<uint>(4 * 4));
   }
-
-  void Update() {
-    Graphics.DrawMeshInstancedProcedural(
-      instanceMesh, 
-      0, 
-      material, 
-      new Bounds(Vector3.zero, Vector3.one), 
-      hashes.Length, 
-      propertyBlock
-    );
-  }
-
 }
